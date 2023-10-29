@@ -1,0 +1,2 @@
+{"level":"error","msg":"Failed to read data from fileopen users.json: no such file or directory","time":"2023-10-29T20:38:22+03:00"}
+{"level":"fatal","msg":"unexpected end of JSON input","time":"2023-10-29T20:38:22+03:00"}

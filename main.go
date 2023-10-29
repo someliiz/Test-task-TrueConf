@@ -6,23 +6,36 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
-
-	"log"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
+	"github.com/sirupsen/logrus"
 )
 
 const store = `users.json`
+
+var (
+	UserNotFound = errors.New("user_not_found")
+)
+
+var app *App
 
 type App struct {
 	router     chi.Router
 	userStore  UserStore
 	storePath  string
 	routerPath string
+	log        *logrus.Entry
+}
+
+type AppError struct {
+	Err     error  `json:"-"`
+	Status  int    `json:"-"`
+	Message string `json:"message"`
 }
 
 type (
@@ -57,12 +70,35 @@ func NewApp(storePath, routerPath string) *App {
 		storePath:  storePath,
 		routerPath: routerPath,
 	}
+	// Создаем экземпляр логгера
+	log := logrus.New()
+	log.Formatter = &logrus.JSONFormatter{}
+	log.Level = logrus.InfoLevel
+
+	// Попытка открыть файл логов
+	file, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err == nil {
+		log.SetOutput(file)
+		defer file.Close() // Закрыть файл после использования
+	} else {
+		log.WithError(err).Error("Failed to log to file, using default stderr")
+	}
+
+	app.log = logrus.NewEntry(log) // Добавляем логгер в структуру App
 
 	app.initRouter()
 	app.initStore()
 
 	return app
 }
+
+func handleError(w http.ResponseWriter, r *http.Request, err error, status int, message string) {
+	appErr := AppError{Err: err, Status: status, Message: message}
+	app.log.Errorf("Error: %v", err)
+	render.Status(r, appErr.Status)
+	render.JSON(w, r, appErr)
+}
+
 func (app *App) initRouter() {
 	app.router = chi.NewRouter()
 	app.router.Use(middleware.RequestID)
@@ -82,13 +118,13 @@ func (app *App) initStore() {
 	f, err := ioutil.ReadFile(app.storePath)
 	if err != nil {
 		// Обработка ошибки чтения файла
-		log.Fatal(err)
+		app.log.Error("Failed to read data from file", err)
 	}
 
 	err = json.Unmarshal(f, &app.userStore)
 	if err != nil {
 		// Обработка ошибки разбора JSON
-		log.Fatal(err)
+		app.log.Fatal(err)
 	}
 }
 func (app *App) initUserRoutes(r chi.Router) {
@@ -106,19 +142,19 @@ func (app *App) searchUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) createUser(w http.ResponseWriter, r *http.Request) {
-	// Ваш код обработки создания пользователя
+
 }
 
 func (app *App) getUser(w http.ResponseWriter, r *http.Request) {
-	// Ваш код обработки получения пользователя
+
 }
 
 func (app *App) updateUser(w http.ResponseWriter, r *http.Request) {
-	// Ваш код обработки обновления пользователя
+
 }
 
 func (app *App) deleteUser(w http.ResponseWriter, r *http.Request) {
-	// Ваш код обработки удаления пользователя
+
 }
 
 func (c *CreateUserRequest) Bind(r *http.Request) error { return nil }
@@ -240,10 +276,6 @@ func searchUsers(w http.ResponseWriter, r *http.Request) {
 
 	render.JSON(w, r, s.List)
 }
-
-var (
-	UserNotFound = errors.New("user_not_found")
-)
 
 func main() {
 	app := NewApp("users.json", "/api/v1/users")
